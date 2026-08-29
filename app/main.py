@@ -233,7 +233,7 @@ if prompt:
 
                 st.session_state.request_count += 1
 
-                st.session_state.last_latency = latency
+                st.session_state.last_latency = latencygit add app .gitignore
 
 
             except requests.RequestException as error:
