@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: CI/CD Pipeline
 
 on:
   push:
@@ -10,9 +10,14 @@ on:
       - main
 
 
+permissions:
+  contents: read
+  packages: write
+
+
 jobs:
 
-  test-and-build:
+  test-build-scan-publish:
 
     runs-on: ubuntu-latest
 
@@ -51,4 +56,23 @@ jobs:
           ignore-unfixed: true
           vuln-type: "os,library"
           severity: "CRITICAL"
-          
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag Docker image
+        if: github.event_name == 'push'
+        run: |
+          docker tag llm-frontend:ci ghcr.io/swapkawale/containerized-llm-inference-platform-frontend:latest
+          docker tag llm-frontend:ci ghcr.io/swapkawale/containerized-llm-inference-platform-frontend:${{ github.sha }}
+
+      - name: Publish Docker image to GHCR
+        if: github.event_name == 'push'
+        run: |
+          docker push ghcr.io/swapkawale/containerized-llm-inference-platform-frontend:latest
+          docker push ghcr.io/swapkawale/containerized-llm-inference-platform-frontend:${{ github.sha }}
