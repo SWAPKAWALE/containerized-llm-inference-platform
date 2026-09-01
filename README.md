@@ -7,7 +7,13 @@ A self-hosted, GPU-accelerated Large Language Model inference platform built usi
 The project demonstrates how an open-source LLM can be deployed locally without relying on paid APIs or cloud infrastructure while applying practical DevOps practices such as containerization, service health checks, automated testing, CI/CD, security scanning, persistent storage, environment configuration, and container image publishing.
 
 ---
+## Application Demo
 
+![LLM Inference Platform](docs/images/app-demo.png)
+
+The Streamlit interface shows real-time Ollama server health, model readiness, active model configuration, request metrics, response latency, and streamed LLM responses.
+
+---
 ## Project Overview
 
 This platform runs an open-source LLM locally using **Ollama** as the inference service and provides an interactive **Streamlit** chat interface.
