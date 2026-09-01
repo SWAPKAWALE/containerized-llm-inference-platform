@@ -1,14 +1,26 @@
-import json
 import os
 import time
 
 import requests
 import streamlit as st
 
+from ollama_client import check_health, stream_chat
 
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-MODEL_NAME = os.getenv("MODEL_NAME", "llama3.2:1b")
 
+OLLAMA_HOST = os.getenv(
+    "OLLAMA_HOST",
+    "http://localhost:11434",
+)
+
+MODEL_NAME = os.getenv(
+    "MODEL_NAME",
+    "llama3.2:1b",
+)
+
+
+# --------------------------------------------------
+# Streamlit page configuration
+# --------------------------------------------------
 
 st.set_page_config(
     page_title="LLM Inference Platform",
@@ -17,9 +29,9 @@ st.set_page_config(
 )
 
 
-# -----------------------------
+# --------------------------------------------------
 # Session state
-# -----------------------------
+# --------------------------------------------------
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -31,65 +43,15 @@ if "last_latency" not in st.session_state:
     st.session_state.last_latency = 0.0
 
 
-# -----------------------------
-# Ollama functions
-# -----------------------------
-
-def check_ollama_health():
-    try:
-        response = requests.get(
-            f"{OLLAMA_HOST}/api/tags",
-            timeout=3,
-        )
-
-        return response.status_code == 200
-
-    except requests.RequestException:
-        return False
-
-
-def stream_ollama_response(messages, temperature):
-    response = requests.post(
-        f"{OLLAMA_HOST}/api/chat",
-        json={
-            "model": MODEL_NAME,
-            "messages": messages,
-            "stream": True,
-            "keep_alive": "10m",
-            "options": {
-                "temperature": temperature,
-                "num_predict": 256,
-            },
-        },
-        stream=True,
-        timeout=(5, 300),
-    )
-
-    response.raise_for_status()
-
-    for line in response.iter_lines():
-
-        if not line:
-            continue
-
-        data = json.loads(line.decode("utf-8"))
-
-        if "message" in data:
-            content = data["message"].get("content", "")
-
-            if content:
-                yield content
-
-
-# -----------------------------
+# --------------------------------------------------
 # Sidebar
-# -----------------------------
+# --------------------------------------------------
 
 with st.sidebar:
 
     st.header("⚙️ Inference Controls")
 
-    server_online = check_ollama_health()
+    server_online = check_health(OLLAMA_HOST)
 
     if server_online:
         st.success("Server Online")
@@ -130,9 +92,9 @@ with st.sidebar:
         st.rerun()
 
 
-# -----------------------------
+# --------------------------------------------------
 # Main interface
-# -----------------------------
+# --------------------------------------------------
 
 st.title("🤖 Containerized LLM Inference Platform")
 
@@ -144,7 +106,9 @@ st.caption(
 st.divider()
 
 
-# Display previous messages
+# --------------------------------------------------
+# Display chat history
+# --------------------------------------------------
 
 for message in st.session_state.messages:
 
@@ -152,9 +116,9 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 
-# -----------------------------
+# --------------------------------------------------
 # User input
-# -----------------------------
+# --------------------------------------------------
 
 prompt = st.chat_input(
     "Ask your local LLM anything..."
@@ -163,6 +127,7 @@ prompt = st.chat_input(
 
 if prompt:
 
+    # Save user message
     st.session_state.messages.append(
         {
             "role": "user",
@@ -170,11 +135,13 @@ if prompt:
         }
     )
 
+    # Display user message
     with st.chat_message("user"):
         st.markdown(prompt)
 
 
-    if not check_ollama_health():
+    # Check Ollama availability
+    if not check_health(OLLAMA_HOST):
 
         st.error(
             "Ollama inference server is unavailable."
@@ -182,6 +149,7 @@ if prompt:
 
     else:
 
+        # Display assistant response
         with st.chat_message("assistant"):
 
             placeholder = st.empty()
@@ -192,6 +160,7 @@ if prompt:
 
             try:
 
+                # Prepare complete conversation history
                 api_messages = [
                     {
                         "role": message["role"],
@@ -200,7 +169,10 @@ if prompt:
                     for message in st.session_state.messages
                 ]
 
-                for chunk in stream_ollama_response(
+                # Stream response from Ollama
+                for chunk in stream_chat(
+                    OLLAMA_HOST,
+                    MODEL_NAME,
                     api_messages,
                     temperature,
                 ):
@@ -212,9 +184,11 @@ if prompt:
                     )
 
 
+                # Calculate response latency
                 latency = time.time() - start_time
 
 
+                # Display completed response
                 placeholder.markdown(
                     full_response
                 )
@@ -224,6 +198,7 @@ if prompt:
                 )
 
 
+                # Save assistant response
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
@@ -231,9 +206,11 @@ if prompt:
                     }
                 )
 
+
+                # Update metrics
                 st.session_state.request_count += 1
 
-                st.session_state.last_latency = latencygit add app .gitignore
+                st.session_state.last_latency = latency
 
 
             except requests.RequestException as error:
