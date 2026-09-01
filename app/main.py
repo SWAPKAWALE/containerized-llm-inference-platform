@@ -1,11 +1,32 @@
+import logging
 import os
 import time
 
 import requests
 import streamlit as st
 
-from ollama_client import check_health, stream_chat
+from ollama_client import (
+    check_health,
+    model_available,
+    stream_chat,
+)
 
+
+# --------------------------------------------------
+# Logging
+# --------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+
+logger = logging.getLogger(__name__)
+
+
+# --------------------------------------------------
+# Configuration
+# --------------------------------------------------
 
 OLLAMA_HOST = os.getenv(
     "OLLAMA_HOST",
@@ -17,10 +38,6 @@ MODEL_NAME = os.getenv(
     "llama3.2:1b",
 )
 
-
-# --------------------------------------------------
-# Streamlit page configuration
-# --------------------------------------------------
 
 st.set_page_config(
     page_title="LLM Inference Platform",
@@ -44,6 +61,22 @@ if "last_latency" not in st.session_state:
 
 
 # --------------------------------------------------
+# Service status
+# --------------------------------------------------
+
+server_online = check_health(OLLAMA_HOST)
+
+model_ready = (
+    model_available(
+        OLLAMA_HOST,
+        MODEL_NAME,
+    )
+    if server_online
+    else False
+)
+
+
+# --------------------------------------------------
 # Sidebar
 # --------------------------------------------------
 
@@ -51,14 +84,17 @@ with st.sidebar:
 
     st.header("⚙️ Inference Controls")
 
-    server_online = check_health(OLLAMA_HOST)
-
     if server_online:
-        st.success("Server Online")
+        st.success("Ollama Server: Online")
     else:
-        st.error("Server Offline")
+        st.error("Ollama Server: Offline")
 
-    st.write("**Model**")
+    if model_ready:
+        st.success("Model: Ready")
+    elif server_online:
+        st.warning("Model: Not Available")
+
+    st.write("**Active Model**")
     st.code(MODEL_NAME)
 
     temperature = st.slider(
@@ -89,6 +125,8 @@ with st.sidebar:
         st.session_state.request_count = 0
         st.session_state.last_latency = 0.0
 
+        logger.info("Chat history cleared.")
+
         st.rerun()
 
 
@@ -107,7 +145,7 @@ st.divider()
 
 
 # --------------------------------------------------
-# Display chat history
+# Display conversation history
 # --------------------------------------------------
 
 for message in st.session_state.messages:
@@ -127,7 +165,8 @@ prompt = st.chat_input(
 
 if prompt:
 
-    # Save user message
+    logger.info("New user inference request received.")
+
     st.session_state.messages.append(
         {
             "role": "user",
@@ -135,21 +174,35 @@ if prompt:
         }
     )
 
-    # Display user message
     with st.chat_message("user"):
         st.markdown(prompt)
 
 
-    # Check Ollama availability
-    if not check_health(OLLAMA_HOST):
+    if not server_online:
+
+        logger.error(
+            "Inference rejected because Ollama is offline."
+        )
 
         st.error(
             "Ollama inference server is unavailable."
         )
 
+
+    elif not model_ready:
+
+        logger.error(
+            "Inference rejected because model %s is unavailable.",
+            MODEL_NAME,
+        )
+
+        st.error(
+            f"Model '{MODEL_NAME}' is not available."
+        )
+
+
     else:
 
-        # Display assistant response
         with st.chat_message("assistant"):
 
             placeholder = st.empty()
@@ -160,7 +213,6 @@ if prompt:
 
             try:
 
-                # Prepare complete conversation history
                 api_messages = [
                     {
                         "role": message["role"],
@@ -169,7 +221,7 @@ if prompt:
                     for message in st.session_state.messages
                 ]
 
-                # Stream response from Ollama
+
                 for chunk in stream_chat(
                     OLLAMA_HOST,
                     MODEL_NAME,
@@ -184,11 +236,9 @@ if prompt:
                     )
 
 
-                # Calculate response latency
                 latency = time.time() - start_time
 
 
-                # Display completed response
                 placeholder.markdown(
                     full_response
                 )
@@ -198,7 +248,6 @@ if prompt:
                 )
 
 
-                # Save assistant response
                 st.session_state.messages.append(
                     {
                         "role": "assistant",
@@ -207,13 +256,22 @@ if prompt:
                 )
 
 
-                # Update metrics
                 st.session_state.request_count += 1
 
                 st.session_state.last_latency = latency
 
 
+                logger.info(
+                    "Inference completed successfully in %.2f seconds.",
+                    latency,
+                )
+
+
             except requests.RequestException as error:
+
+                logger.exception(
+                    "Inference request failed."
+                )
 
                 st.error(
                     f"Inference request failed: {error}"
